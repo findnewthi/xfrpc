@@ -10,6 +10,7 @@
 #include "uthash.h"
 #include <stdint.h>
 
+#define INITIAL_STREAM_WINDOW_SIZE (256 * 1024)
 #define MAX_STREAM_WINDOW_SIZE (6 * 1024 * 1024)
 #define RBUF_SIZE (32 * 1024)
 #define WBUF_SIZE (32 * 1024)

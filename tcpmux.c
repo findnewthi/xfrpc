@@ -197,8 +197,8 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     // Initialize stream properties
     stream->id = id;
     stream->state = state;
-    stream->recv_window = MAX_STREAM_WINDOW_SIZE;
-    stream->send_window = MAX_STREAM_WINDOW_SIZE;
+    stream->recv_window = INITIAL_STREAM_WINDOW_SIZE;
+    stream->send_window = INITIAL_STREAM_WINDOW_SIZE;
 
     // Clear ring buffers
     memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));
