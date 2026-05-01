@@ -1,0 +1,136 @@
+# syntax=docker/dockerfile:1.6
+
+FROM debian:bookworm-slim AS builder
+
+ARG MUSL_CROSS_URL=https://musl.cc/mipsel-linux-muslsf-cross.tgz
+ARG PREFIX=/opt/xfrpc-mipsel
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CROSS_TRIPLE=mipsel-linux-muslsf
+ENV PATH=/opt/cross/bin:${PATH}
+ENV CC=mipsel-linux-muslsf-gcc
+ENV CXX=mipsel-linux-muslsf-g++
+ENV AR=mipsel-linux-muslsf-ar
+ENV RANLIB=mipsel-linux-muslsf-ranlib
+ENV STRIP=mipsel-linux-muslsf-strip
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        curl \
+        file \
+        make \
+        perl \
+        pkg-config \
+        tar \
+        xz-utils \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/cross "${PREFIX}" \
+    && curl -fsSL "${MUSL_CROSS_URL}" | tar -xz -C /opt/cross --strip-components=1
+
+COPY . /src
+WORKDIR /src
+
+RUN <<'EOF'
+set -eux
+
+cat >/tmp/mipsel-softfloat-toolchain.cmake <<TOOLCHAIN
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR mipsel)
+set(CMAKE_C_COMPILER /opt/cross/bin/mipsel-linux-muslsf-gcc)
+set(CMAKE_CXX_COMPILER /opt/cross/bin/mipsel-linux-muslsf-g++)
+set(CMAKE_AR /opt/cross/bin/mipsel-linux-muslsf-ar CACHE FILEPATH "")
+set(CMAKE_RANLIB /opt/cross/bin/mipsel-linux-muslsf-ranlib CACHE FILEPATH "")
+set(CMAKE_STRIP /opt/cross/bin/mipsel-linux-muslsf-strip CACHE FILEPATH "")
+set(CMAKE_FIND_ROOT_PATH ${PREFIX} /opt/cross/mipsel-linux-muslsf)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+set(CMAKE_C_FLAGS_INIT "-Os -pipe -msoft-float")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")
+TOOLCHAIN
+
+cd /src/thirdparty/openssl-1.1.1m
+make clean || true
+chmod +x Configure config
+./Configure linux-mips32 no-shared no-tests no-async \
+    --prefix="${PREFIX}" \
+    --openssldir="${PREFIX}/ssl"
+make -j"$(nproc)"
+make install_sw
+
+cd /src/thirdparty/zlib-1.2.13
+make clean || true
+chmod +x configure
+CHOST="${CROSS_TRIPLE}" CC="${CC}" AR="${AR}" RANLIB="${RANLIB}" ./configure \
+    --static \
+    --prefix="${PREFIX}"
+make -j"$(nproc)"
+make install
+
+cmake -S /src/thirdparty/json-c -B /tmp/build-json-c \
+    -DCMAKE_TOOLCHAIN_FILE=/tmp/mipsel-softfloat-toolchain.cmake \
+    -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_TESTING=OFF \
+    -DDISABLE_WERROR=ON
+cmake --build /tmp/build-json-c -j"$(nproc)"
+cmake --install /tmp/build-json-c
+
+cmake -S /src/thirdparty/libevent-2.1.10 -B /tmp/build-libevent \
+    -DCMAKE_TOOLCHAIN_FILE=/tmp/mipsel-softfloat-toolchain.cmake \
+    -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEVENT__LIBRARY_TYPE=STATIC \
+    -DEVENT__DISABLE_TESTS=ON \
+    -DEVENT__DISABLE_SAMPLES=ON \
+    -DEVENT__DISABLE_BENCHMARK=ON \
+    -DEVENT__DISABLE_REGRESS=ON \
+    -DEVENT__HAVE_KQUEUE=OFF \
+    -DEVENT__HAVE_WORKING_KQUEUE=OFF \
+    -DEVENT__HAVE_DEVPOLL=OFF \
+    -DEVENT__HAVE_PORT_CREATE=OFF \
+    -DEVENT__HAVE_ARC4RANDOM=OFF \
+    -DEVENT__HAVE_ARC4RANDOM_BUF=OFF \
+    -DEVENT__HAVE_ARC4RANDOM_ADDRANDOM=OFF \
+    -DEVENT__HAVE_SYSCTL=OFF \
+    -DEVENT__HAVE_ISSETUGID=OFF \
+    -DEVENT__HAVE_MACH_ABSOLUTE_TIME=OFF \
+    -DOPENSSL_ROOT_DIR="${PREFIX}" \
+    -DOPENSSL_INCLUDE_DIR="${PREFIX}/include" \
+    -DOPENSSL_SSL_LIBRARY="${PREFIX}/lib/libssl.a" \
+    -DOPENSSL_CRYPTO_LIBRARY="${PREFIX}/lib/libcrypto.a"
+cmake --build /tmp/build-libevent -j"$(nproc)"
+cmake --install /tmp/build-libevent
+
+cmake -S /src -B /tmp/build-xfrpc \
+    -DCMAKE_TOOLCHAIN_FILE=/tmp/mipsel-softfloat-toolchain.cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DDEBUG=OFF \
+    -DENABLE_SANITIZER=OFF \
+    -DCMAKE_PREFIX_PATH="${PREFIX}" \
+    -DOPENSSL_ROOT_DIR="${PREFIX}" \
+    -DOPENSSL_SSL_LIBRARY="${PREFIX}/lib/libssl.a" \
+    -DOPENSSL_CRYPTO_LIBRARY="${PREFIX}/lib/libcrypto.a" \
+    -DJSON-C_INCLUDE_DIR="${PREFIX}/include/json-c" \
+    -DJSON-C_LIBRARY="${PREFIX}/lib/libjson-c.a" \
+    -DZLIB_INCLUDE_DIR="${PREFIX}/include" \
+    -DZLIB_LIBRARY="${PREFIX}/lib/libz.a" \
+    -DCMAKE_C_FLAGS="-I${PREFIX}/include -I${PREFIX}/include/json-c" \
+    -DCMAKE_EXE_LINKER_FLAGS="-static -L${PREFIX}/lib"
+cmake --build /tmp/build-xfrpc -j"$(nproc)"
+
+mkdir -p /out
+cp /tmp/build-xfrpc/xfrpc /out/xfrpc-mipsel-softfloat-static
+"${STRIP}" /out/xfrpc-mipsel-softfloat-static
+file /out/xfrpc-mipsel-softfloat-static
+EOF
+
+FROM scratch AS artifact
+COPY --from=builder /out/xfrpc-mipsel-softfloat-static /xfrpc-mipsel-softfloat-static

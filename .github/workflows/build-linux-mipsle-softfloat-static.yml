@@ -1,0 +1,32 @@
+name: build linux mipsle softfloat static
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build xfrpc for linux mipsle softfloat static
+        run: |
+          set -eux
+          rm -rf dist
+          docker build \
+            --progress=plain \
+            -f docker/Dockerfile.mipsel-softfloat-static \
+            --target artifact \
+            --output type=local,dest=dist \
+            .
+          mv dist/xfrpc-mipsel-softfloat-static dist/xfrpc-linux-mipsle-softfloat-static
+          file dist/xfrpc-linux-mipsle-softfloat-static
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xfrpc-linux-mipsle-softfloat-static
+          path: dist/xfrpc-linux-mipsle-softfloat-static
+          if-no-files-found: error

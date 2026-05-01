@@ -231,8 +231,18 @@ static int init_tcp_mux_client(struct proxy_client *client) {
  * connection attempts
  */
 static int init_direct_client(struct proxy_client *client, 
-							const char *server_addr, 
-							int server_port) {
+								const char *server_addr, 
+								int server_port) {
+	struct common_conf *c_conf = get_common_config();
+
+	if (c_conf) {
+		if (resolve_common_server_port(c_conf) != 0) {
+			debug(LOG_ERR, "Failed to resolve server port for work connection");
+			return -1;
+		}
+		server_port = c_conf->server_port;
+	}
+
 	struct bufferevent *bev = connect_server(client->base, server_addr, server_port);
 	if (!bev) {
 		debug(LOG_ERR, "Failed to connect to server [%s:%d]", 
@@ -1476,13 +1486,24 @@ static void keep_control_alive()
  * @return int Returns 0 on success, negative value on failure
  */
 static int init_server_connection(struct bufferevent **bev_out, 
-								struct event_base *base,
-								const char *server_addr, 
-								int server_port) 
+									struct event_base *base,
+									const char *server_addr, 
+									int server_port) 
 {
+	struct common_conf *c_conf = get_common_config();
+
 	if (!bev_out || !base || !server_addr) {
 		debug(LOG_ERR, "Invalid parameters for server connection");
 		return -1;
+	}
+
+	if (c_conf && c_conf->server_addr &&
+		strcmp(server_addr, c_conf->server_addr) == 0) {
+		if (resolve_common_server_port(c_conf) != 0) {
+			debug(LOG_ERR, "Failed to resolve server port for control connection");
+			return -1;
+		}
+		server_port = c_conf->server_port;
 	}
 
 	// Free existing connection if any
@@ -1541,12 +1562,15 @@ static void start_base_connect()
 		exit(1);
 	}
 
-	// Initialize server connection
-	if (init_server_connection(&main_ctl->connect_bev,
-							 main_ctl->connect_base,
-							 c_conf->server_addr,
-							 c_conf->server_port) != 0) {
-		exit(1);
+	// Initialize server connection. Dynamic port sources can be temporarily
+	// unavailable, so keep retrying instead of exiting the client.
+	while (init_server_connection(&main_ctl->connect_bev,
+								  main_ctl->connect_base,
+								  c_conf->server_addr,
+								  c_conf->server_port) != 0) {
+		sleep(RETRY_DELAY_SECONDS);
+		reset_session_id();
+		clear_main_control();
 	}
 
 	// Setup callbacks for the connection
@@ -1840,6 +1864,11 @@ static int init_frp_connection(struct bufferevent **bev_out, struct event_base *
 	struct common_conf *c_conf = get_common_config();
 	if (!c_conf) {
 		debug(LOG_ERR, "Failed to get common config");
+		return -1;
+	}
+
+	if (resolve_common_server_port(c_conf) != 0) {
+		debug(LOG_ERR, "Failed to resolve server port for login connection");
 		return -1;
 	}
 
@@ -2151,5 +2180,3 @@ void run_control()
 {
 	start_base_connect();
 }
-
-
