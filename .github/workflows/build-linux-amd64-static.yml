@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     env:
-      MUSL_CROSS_URLS: https://more.musl.cc/x86_64-linux-musl/x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz
+      MUSL_CROSS_URLS: https://vpn.uestc.eu.cc/proxy/https://musl.cc/x86_64-linux-musl-cross.tgz https://more.musl.cc/x86_64-linux-musl/x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz
       PREFIX: /tmp/xfrpc-amd64
       CROSS_TRIPLE: x86_64-linux-musl
 

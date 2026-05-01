@@ -2,7 +2,7 @@
 
 FROM debian:bookworm-slim AS builder
 
-ARG MUSL_CROSS_URLS="https://more.musl.cc/x86_64-linux-musl/mipsel-linux-muslsf-cross.tgz https://musl.cc/mipsel-linux-muslsf-cross.tgz"
+ARG MUSL_CROSS_URLS="https://vpn.uestc.eu.cc/proxy/https://musl.cc/mipsel-linux-muslsf-cross.tgz https://more.musl.cc/x86_64-linux-musl/mipsel-linux-muslsf-cross.tgz https://musl.cc/mipsel-linux-muslsf-cross.tgz"
 ARG PREFIX=/opt/xfrpc-mipsel
 
 ENV DEBIAN_FRONTEND=noninteractive
