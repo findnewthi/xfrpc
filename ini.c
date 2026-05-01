@@ -64,8 +64,13 @@ static char* find_chars_or_comment(const char* s, const char* chars)
 /* Version of strncpy that ensures dest (size bytes) is null-terminated. */
 static char* strncpy0(char* dest, const char* src, size_t size)
 {
-    strncpy(dest, src, size);
-    dest[size - 1] = '\0';
+    size_t len;
+
+    if (size == 0)
+        return dest;
+    len = strnlen(src, size - 1);
+    memcpy(dest, src, len);
+    dest[len] = '\0';
     return dest;
 }
 

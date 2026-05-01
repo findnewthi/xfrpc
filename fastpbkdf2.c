@@ -7,7 +7,6 @@
 #include <string.h>
 #include <assert.h>
 #include <openssl/evp.h>
-#include <openssl/core_names.h>
 #include "fastpbkdf2.h"
 
 void fastpbkdf2_hmac_sha1(const uint8_t *pw, size_t npw,
