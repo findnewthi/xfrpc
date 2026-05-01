@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     env:
-      MUSL_CROSS_URL: https://musl.cc/x86_64-linux-musl-cross.tgz
+      MUSL_CROSS_URLS: https://more.musl.cc/x86_64-linux-musl/x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz
       PREFIX: /tmp/xfrpc-amd64
       CROSS_TRIPLE: x86_64-linux-musl
 
@@ -36,7 +36,15 @@ jobs:
         run: |
           set -eux
           mkdir -p /tmp/cross "${PREFIX}"
-          curl -fsSL "${MUSL_CROSS_URL}" | tar -xz -C /tmp/cross --strip-components=1
+          for url in ${MUSL_CROSS_URLS}; do
+            echo "Downloading musl cross toolchain from ${url}"
+            if curl --connect-timeout 20 --retry 3 --retry-delay 5 -fL "${url}" -o /tmp/cross.tgz; then
+              tar -xzf /tmp/cross.tgz -C /tmp/cross --strip-components=1
+              rm -f /tmp/cross.tgz
+              break
+            fi
+          done
+          test -x /tmp/cross/bin/x86_64-linux-musl-gcc
           echo "/tmp/cross/bin" >> "${GITHUB_PATH}"
 
       - name: Build static third-party libraries

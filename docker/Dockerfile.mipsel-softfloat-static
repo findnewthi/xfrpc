@@ -2,7 +2,7 @@
 
 FROM debian:bookworm-slim AS builder
 
-ARG MUSL_CROSS_URL=https://musl.cc/mipsel-linux-muslsf-cross.tgz
+ARG MUSL_CROSS_URLS="https://more.musl.cc/x86_64-linux-musl/mipsel-linux-muslsf-cross.tgz https://musl.cc/mipsel-linux-muslsf-cross.tgz"
 ARG PREFIX=/opt/xfrpc-mipsel
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -27,8 +27,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /opt/cross "${PREFIX}" \
-    && curl -fsSL "${MUSL_CROSS_URL}" | tar -xz -C /opt/cross --strip-components=1
+RUN set -eux; \
+    mkdir -p /opt/cross "${PREFIX}"; \
+    for url in ${MUSL_CROSS_URLS}; do \
+        echo "Downloading musl cross toolchain from ${url}"; \
+        if curl --connect-timeout 20 --retry 3 --retry-delay 5 -fL "${url}" -o /tmp/cross.tgz; then \
+            tar -xzf /tmp/cross.tgz -C /opt/cross --strip-components=1; \
+            rm -f /tmp/cross.tgz; \
+            exit 0; \
+        fi; \
+    done; \
+    echo "Failed to download musl cross toolchain" >&2; \
+    exit 1
 
 COPY . /src
 WORKDIR /src
