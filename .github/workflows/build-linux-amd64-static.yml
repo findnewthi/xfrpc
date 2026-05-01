@@ -56,7 +56,6 @@ jobs:
           export CXX="${CROSS_TRIPLE}-g++"
           export AR="${CROSS_TRIPLE}-ar"
           export RANLIB="${CROSS_TRIPLE}-ranlib"
-          export CROSS_COMPILE="${CROSS_TRIPLE}-"
 
           cat >/tmp/amd64-musl-toolchain.cmake <<TOOLCHAIN
           set(CMAKE_SYSTEM_NAME Linux)
