@@ -33,7 +33,9 @@ else()
     find_package(ZLIB REQUIRED)
     
     include_directories(
-        ${JSON-C_INCLUDE_DIR}
+        ${LIBEVENT_INCLUDE_DIR}
+        ${OPENSSL_INCLUDE_DIR}
+        ${JSON-C_INCLUDE_DIRS}
         ${ZLIB_INCLUDE_DIRS}
     )
 endif()

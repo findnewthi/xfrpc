@@ -40,7 +40,7 @@ jobs:
             -DENABLE_SANITIZER=OFF \
             -DCMAKE_PREFIX_PATH="${OPENSSL_PREFIX};${JSON_C_PREFIX};${LIBEVENT_PREFIX};${ZLIB_PREFIX}" \
             -DOPENSSL_ROOT_DIR="${OPENSSL_PREFIX}" \
-            -DJSON-C_INCLUDE_DIR="${JSON_C_PREFIX}/include/json-c" \
+            -DJSON-C_INCLUDE_DIR="${JSON_C_PREFIX}/include" \
             -DJSON-C_LIBRARY="${JSON_C_PREFIX}/lib/libjson-c.dylib" \
             -DLIBEVENT_INCLUDE_DIR="${LIBEVENT_PREFIX}/include" \
             -DLIBEVENT_LIB="${LIBEVENT_PREFIX}/lib/libevent.dylib" \
