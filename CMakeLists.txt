@@ -16,7 +16,13 @@ if(THIRDPARTY_STATIC_BUILD)
         ${PROJECT_SOURCE_DIR}/thirdparty/include/
     )
     link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/)
-    set(EXTRA_LIBS dl pthread)
+    if(WIN32)
+        set(EXTRA_LIBS ws2_32 crypt32 bcrypt iphlpapi)
+    elseif(APPLE)
+        set(EXTRA_LIBS pthread)
+    else()
+        set(EXTRA_LIBS dl pthread)
+    endif()
 else()
     set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
     
@@ -100,12 +106,13 @@ set(src_xfrpc
 )
 
 # Required libraries
-set(SYSTEM_LIBS
-    pthread
-    m
-    crypt
-    dl
-)
+if(WIN32)
+    set(SYSTEM_LIBS ws2_32 crypt32 bcrypt iphlpapi)
+elseif(APPLE)
+    set(SYSTEM_LIBS pthread m)
+else()
+    set(SYSTEM_LIBS pthread m crypt dl)
+endif()
 
 set(EXTERNAL_LIBS
     ssl
