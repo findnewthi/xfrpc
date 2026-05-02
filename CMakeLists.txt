@@ -116,13 +116,22 @@ else()
     set(SYSTEM_LIBS pthread m crypt dl)
 endif()
 
-set(EXTERNAL_LIBS
-    ssl
-    crypto
-    event
-    ${JSON-C_LIBRARIES}
-    ${ZLIB_LIBRARIES}
-)
+if(THIRDPARTY_STATIC_BUILD)
+    set(EXTERNAL_LIBS
+        ssl
+        crypto
+        event
+        ${JSON-C_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+    )
+else()
+    set(EXTERNAL_LIBS
+        ${OPENSSL_LIBRARIES}
+        ${LIBEVENT_LIB}
+        ${JSON-C_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+    )
+endif()
 
 # Set debug flags
 if(DEBUG)
