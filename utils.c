@@ -271,11 +271,18 @@ int get_net_ifname(char *if_buf, int blen)
 				freeifaddrs(ifaddr);
 				return 0;
 			}
-		} else if (family == AF_PACKET && 
-				  ifa->ifa_data != NULL && 
-				  strcmp(ifa->ifa_name, "lo") != 0) {
-			// Store first non-loopback interface as backup
-			strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ-1);
+#ifdef __linux__
+		} else if (family == AF_PACKET &&
+				   ifa->ifa_data != NULL &&
+				   strcmp(ifa->ifa_name, "lo") != 0) {
+			strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ - 1);
+#else
+			if (backup_ifname[0] == '\0' &&
+				strcmp(ifa->ifa_name, "lo0") != 0 &&
+				strcmp(ifa->ifa_name, "lo") != 0) {
+				strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ - 1);
+			}
+#endif
 		}
 	}
 
