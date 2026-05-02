@@ -1,4 +1,4 @@
-name: build linux amd64 static
+name: build linux amd64 and arm64 static
 
 on:
   workflow_dispatch:
@@ -7,10 +7,28 @@ jobs:
   build:
     runs-on: ubuntu-24.04
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            cross_triple: x86_64-linux-musl
+            cmake_processor: x86_64
+            openssl_target: linux-x86_64
+            musl_cross_urls: https://vpn.uestc.eu.cc/proxy/https://musl.cc/x86_64-linux-musl-cross.tgz https://more.musl.cc/x86_64-linux-musl/x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz
+          - arch: arm64
+            cross_triple: aarch64-linux-musl
+            cmake_processor: aarch64
+            openssl_target: linux-aarch64
+            musl_cross_urls: https://vpn.uestc.eu.cc/proxy/https://musl.cc/aarch64-linux-musl-cross.tgz https://more.musl.cc/x86_64-linux-musl/aarch64-linux-musl-cross.tgz https://musl.cc/aarch64-linux-musl-cross.tgz
+
     env:
-      MUSL_CROSS_URLS: https://vpn.uestc.eu.cc/proxy/https://musl.cc/x86_64-linux-musl-cross.tgz https://more.musl.cc/x86_64-linux-musl/x86_64-linux-musl-cross.tgz https://musl.cc/x86_64-linux-musl-cross.tgz
-      PREFIX: /tmp/xfrpc-amd64
-      CROSS_TRIPLE: x86_64-linux-musl
+      PREFIX: /tmp/xfrpc-${{ matrix.arch }}
+      CROSS_TRIPLE: ${{ matrix.cross_triple }}
+      CMAKE_PROCESSOR: ${{ matrix.cmake_processor }}
+      OPENSSL_TARGET: ${{ matrix.openssl_target }}
+      MUSL_CROSS_URLS: ${{ matrix.musl_cross_urls }}
+      TOOLCHAIN_FILE: /tmp/${{ matrix.arch }}-musl-toolchain.cmake
 
     steps:
       - name: Checkout
@@ -32,7 +50,7 @@ jobs:
             xz-utils \
             build-essential
 
-      - name: Install x86_64 musl cross toolchain
+      - name: Install musl cross toolchain
         run: |
           set -eux
           mkdir -p /tmp/cross "${PREFIX}"
@@ -44,7 +62,7 @@ jobs:
               break
             fi
           done
-          test -x /tmp/cross/bin/x86_64-linux-musl-gcc
+          test -x "/tmp/cross/bin/${CROSS_TRIPLE}-gcc"
           echo "/tmp/cross/bin" >> "${GITHUB_PATH}"
 
       - name: Build static third-party libraries
@@ -57,15 +75,15 @@ jobs:
           export AR="${CROSS_TRIPLE}-ar"
           export RANLIB="${CROSS_TRIPLE}-ranlib"
 
-          cat >/tmp/amd64-musl-toolchain.cmake <<TOOLCHAIN
+          cat >"${TOOLCHAIN_FILE}" <<TOOLCHAIN
           set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR x86_64)
-          set(CMAKE_C_COMPILER /tmp/cross/bin/x86_64-linux-musl-gcc)
-          set(CMAKE_CXX_COMPILER /tmp/cross/bin/x86_64-linux-musl-g++)
-          set(CMAKE_AR /tmp/cross/bin/x86_64-linux-musl-ar CACHE FILEPATH "")
-          set(CMAKE_RANLIB /tmp/cross/bin/x86_64-linux-musl-ranlib CACHE FILEPATH "")
-          set(CMAKE_STRIP /tmp/cross/bin/x86_64-linux-musl-strip CACHE FILEPATH "")
-          set(CMAKE_FIND_ROOT_PATH ${PREFIX} /tmp/cross/x86_64-linux-musl)
+          set(CMAKE_SYSTEM_PROCESSOR ${CMAKE_PROCESSOR})
+          set(CMAKE_C_COMPILER /tmp/cross/bin/${CROSS_TRIPLE}-gcc)
+          set(CMAKE_CXX_COMPILER /tmp/cross/bin/${CROSS_TRIPLE}-g++)
+          set(CMAKE_AR /tmp/cross/bin/${CROSS_TRIPLE}-ar CACHE FILEPATH "")
+          set(CMAKE_RANLIB /tmp/cross/bin/${CROSS_TRIPLE}-ranlib CACHE FILEPATH "")
+          set(CMAKE_STRIP /tmp/cross/bin/${CROSS_TRIPLE}-strip CACHE FILEPATH "")
+          set(CMAKE_FIND_ROOT_PATH ${PREFIX} /tmp/cross/${CROSS_TRIPLE})
           set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
           set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
           set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
@@ -79,7 +97,7 @@ jobs:
           cd thirdparty/openssl-1.1.1m
           make clean || true
           chmod +x Configure config
-          ./Configure linux-x86_64 no-shared no-tests no-async \
+          ./Configure "${OPENSSL_TARGET}" no-shared no-tests no-async \
             --prefix="${PREFIX}" \
             --openssldir="${PREFIX}/ssl"
           make -j"$(nproc)"
@@ -94,18 +112,18 @@ jobs:
           make -j"$(nproc)"
           make install
 
-          cmake -S "${GITHUB_WORKSPACE}/thirdparty/json-c" -B /tmp/build-json-c \
-            -DCMAKE_TOOLCHAIN_FILE=/tmp/amd64-musl-toolchain.cmake \
+          cmake -S "${GITHUB_WORKSPACE}/thirdparty/json-c" -B /tmp/build-json-c-${{ matrix.arch }} \
+            -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" \
             -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTING=OFF \
             -DDISABLE_WERROR=ON
-          cmake --build /tmp/build-json-c -j"$(nproc)"
-          cmake --install /tmp/build-json-c
+          cmake --build /tmp/build-json-c-${{ matrix.arch }} -j"$(nproc)"
+          cmake --install /tmp/build-json-c-${{ matrix.arch }}
 
-          cmake -S "${GITHUB_WORKSPACE}/thirdparty/libevent-2.1.10" -B /tmp/build-libevent \
-            -DCMAKE_TOOLCHAIN_FILE=/tmp/amd64-musl-toolchain.cmake \
+          cmake -S "${GITHUB_WORKSPACE}/thirdparty/libevent-2.1.10" -B /tmp/build-libevent-${{ matrix.arch }} \
+            -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" \
             -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DEVENT__LIBRARY_TYPE=STATIC \
@@ -127,16 +145,16 @@ jobs:
             -DOPENSSL_INCLUDE_DIR="${PREFIX}/include" \
             -DOPENSSL_SSL_LIBRARY="${PREFIX}/lib/libssl.a" \
             -DOPENSSL_CRYPTO_LIBRARY="${PREFIX}/lib/libcrypto.a"
-          cmake --build /tmp/build-libevent -j"$(nproc)"
-          cmake --install /tmp/build-libevent
+          cmake --build /tmp/build-libevent-${{ matrix.arch }} -j"$(nproc)"
+          cmake --install /tmp/build-libevent-${{ matrix.arch }}
 
-      - name: Build xfrpc for linux amd64 static
+      - name: Build xfrpc for linux ${{ matrix.arch }} static
         shell: bash
         run: |
           set -eux
           export PATH="/tmp/cross/bin:${PATH}"
-          cmake -S . -B /tmp/build-xfrpc \
-            -DCMAKE_TOOLCHAIN_FILE=/tmp/amd64-musl-toolchain.cmake \
+          cmake -S . -B /tmp/build-xfrpc-${{ matrix.arch }} \
+            -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DDEBUG=OFF \
             -DENABLE_SANITIZER=OFF \
@@ -150,16 +168,16 @@ jobs:
             -DZLIB_LIBRARY="${PREFIX}/lib/libz.a" \
             -DCMAKE_C_FLAGS="-I${PREFIX}/include -I${PREFIX}/include/json-c" \
             -DCMAKE_EXE_LINKER_FLAGS="-static -L${PREFIX}/lib"
-          cmake --build /tmp/build-xfrpc -j"$(nproc)"
+          cmake --build /tmp/build-xfrpc-${{ matrix.arch }} -j"$(nproc)"
 
           mkdir -p dist
-          cp /tmp/build-xfrpc/xfrpc dist/xfrpc-linux-amd64-static
-          x86_64-linux-musl-strip dist/xfrpc-linux-amd64-static
-          file dist/xfrpc-linux-amd64-static
+          cp /tmp/build-xfrpc-${{ matrix.arch }}/xfrpc dist/xfrpc-linux-${{ matrix.arch }}-static
+          "${CROSS_TRIPLE}-strip" dist/xfrpc-linux-${{ matrix.arch }}-static
+          file dist/xfrpc-linux-${{ matrix.arch }}-static
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xfrpc-linux-amd64-static
-          path: dist/xfrpc-linux-amd64-static
+          name: xfrpc-linux-${{ matrix.arch }}-static
+          path: dist/xfrpc-linux-${{ matrix.arch }}-static
           if-no-files-found: error
