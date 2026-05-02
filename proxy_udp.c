@@ -276,6 +276,10 @@ cleanup:
 void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
     struct proxy_client *client = (struct proxy_client *)ctx;
+    struct udp_packet *udp_pkt = NULL;
+    struct udp_addr *raddr = NULL;
+    char *json_buf = NULL;
+
     if (!client || !client->ctl_bev || !client->ps) {
         debug(LOG_ERR, "Invalid client parameters");
         return;
@@ -296,8 +300,8 @@ void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
     }
 
     // Create and populate UDP packet structure
-    struct udp_packet *udp_pkt = calloc(1, sizeof(struct udp_packet));
-    struct udp_addr *raddr = calloc(1, sizeof(struct udp_addr));
+    udp_pkt = calloc(1, sizeof(struct udp_packet));
+    raddr = calloc(1, sizeof(struct udp_addr));
     if (!udp_pkt || !raddr) {
         debug(LOG_ERR, "Memory allocation failed");
         goto cleanup;
@@ -309,7 +313,6 @@ void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
     raddr->port = client->ps->local_port;
 
     // Marshal UDP packet to JSON
-    char *json_buf = NULL;
     if (new_udp_packet_marshal(udp_pkt, &json_buf) < 0 || !json_buf) {
         debug(LOG_ERR, "UDP packet marshalling failed");
         goto cleanup;
