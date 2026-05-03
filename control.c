@@ -33,6 +33,8 @@
 
 static struct control *main_ctl;
 static bool xfrpc_status;
+static bool control_restart_requested;
+static int control_retry_times;
 static int is_login;
 static time_t pong_time;
 
@@ -42,6 +44,14 @@ static void clear_main_control(void);
 static void start_base_connect(void);
 static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
+
+static void request_control_restart(void)
+{
+	control_restart_requested = true;
+	if (main_ctl && main_ctl->connect_base) {
+		event_base_loopbreak(main_ctl->connect_base);
+	}
+}
 
 /**
  * Check if xfrpc client is connected to server
@@ -642,8 +652,7 @@ static void check_server_timeout(time_t current_time) {
 			  elapsed, conf->heartbeat_timeout);
 
 		reset_session_id();
-		clear_main_control();
-		run_control();
+		request_control_restart();
 	}
 }
 
@@ -1351,26 +1360,22 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
  * retry mechanisms and connection state management.
  *
  * @param c_conf Pointer to the common configuration structure
- * @param retry_times Pointer to the number of retry attempts made
- *
- * @note This function modifies the retry_times parameter to track retry attempts
+ * @note This function requests the outer control loop to restart the connection.
  */
-static void handle_connection_failure(struct common_conf *c_conf, int *retry_times) {
+static void handle_connection_failure(struct common_conf *c_conf) {
 	debug(LOG_ERR, "Connection to server [%s:%d] failed: %s", 
 		  c_conf->server_addr, 
 		  c_conf->server_port,
 		  strerror(errno));
 
-	(*retry_times)++;
-	if (*retry_times >= MAX_RETRY_TIMES) {
-		debug(LOG_INFO, "Maximum retry attempts (%d) reached", MAX_RETRY_TIMES);
+	control_retry_times++;
+	if (control_retry_times >= MAX_RETRY_TIMES) {
+		debug(LOG_INFO, "Retry attempts reached %d, continuing to retry", MAX_RETRY_TIMES);
+		control_retry_times = 0;
 	}
 
-	sleep(RETRY_DELAY_SECONDS);
-	
 	reset_session_id();
-	clear_main_control();
-	run_control();
+	request_control_restart();
 }
 
 /**
@@ -1384,6 +1389,7 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
  */
 static void handle_connection_success(struct bufferevent *bev) {
 	debug(LOG_INFO, "Successfully connected to xfrp server");
+	control_retry_times = 0;
 	
 	// Initialize window and login
 	send_window_update(bev, &main_ctl->stream, 0);
@@ -1407,7 +1413,6 @@ static void handle_connection_success(struct bufferevent *bev) {
  */
 static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	static int retry_times = 0;
 	struct common_conf *c_conf = get_common_config();
 	
 	if (!c_conf) {
@@ -1416,10 +1421,9 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		handle_connection_failure(c_conf, &retry_times);
+		handle_connection_failure(c_conf);
 	} 
 	else if (what & BEV_EVENT_CONNECTED) {
-		retry_times = 0;
 		handle_connection_success(bev);
 	}
 }
@@ -2159,10 +2163,6 @@ void close_main_control()
 
 	// Free event bases
 	if (main_ctl->connect_base) {
-		if (event_base_dispatch(main_ctl->connect_base) < 0) {
-			debug(LOG_ERR, "event_base_dispatch failed");
-		}
-
 		if (main_ctl->dnsbase) {
 			evdns_base_free(main_ctl->dnsbase, 0);
 			main_ctl->dnsbase = NULL;
@@ -2178,5 +2178,20 @@ void close_main_control()
 
 void run_control() 
 {
-	start_base_connect();
+	do {
+		control_restart_requested = false;
+		start_base_connect();
+
+		if (main_ctl && main_ctl->connect_base) {
+			if (event_base_dispatch(main_ctl->connect_base) < 0) {
+				debug(LOG_ERR, "event_base_dispatch failed");
+				control_restart_requested = true;
+			}
+		}
+
+		if (control_restart_requested) {
+			sleep(RETRY_DELAY_SECONDS);
+			clear_main_control();
+		}
+	} while (control_restart_requested);
 }
